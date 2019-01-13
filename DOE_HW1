@@ -1,0 +1,33 @@
+/*Design of Experiments: Homework 1*/
+
+/*Import the Data*/
+libname zipline '\\vmware-host\Shared Folders\Desktop\SAS Programming\SAS Datasets';
+
+data zip;
+	set zipline.rduch;
+	/*Creating distance variables to each location*/
+	distloc1=sqrt(((long--78.878130)**2)+((lat-35.89314)**2));
+	distloc2=sqrt(((long--78.875880)**2)+((lat-35.74628)**2));
+	distloc3=sqrt(((long--78.676540)**2)+((lat-35.7724)**2));
+	distloc4=sqrt(((long--79.054280)**2)+((lat-35.90535)**2));
+	distloc5=sqrt(((long--78.575981)**2)+((lat-35.86696)**2));
+	/*Find minimum distance*/
+	closest_dist=min(distloc1, distloc2, distloc3, distloc4, distloc5);
+	/*Create variable closest_loc to assign the closest location*/
+	if closest_dist=distloc1 then closest_loc='Location 1';
+	else if closest_dist=distloc2 then closest_loc='Location 2';
+	else if closest_dist=distloc3 then closest_loc='Location 3';
+	else if closest_dist=distloc4 then closest_loc='Location 4';
+	else closest_loc='Location 5';
+run;
+
+proc univariate data=zip;
+	var closest_dist;
+	histogram closest_dist / normal(color=red);
+run;
+
+proc means data=zip;
+	class closest_loc;
+	var closest_dist;
+run;
+quit;
