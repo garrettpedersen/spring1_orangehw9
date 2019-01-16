@@ -1,10 +1,10 @@
 /*Design of Experiments: Homework 1*/
 
-/*Import the Data*/
+/*IMPORT DATA*/
 libname zipline '\\vmware-host\Shared Folders\Desktop\SAS Programming\SAS Datasets';
 
 data zip;
-	set zipline.rduch;
+	set zipline.rduch (drop=VAR1);
 	/*Creating distance variables to each location*/
 	distloc1=sqrt(((long--78.878130)**2)+((lat-35.89314)**2));
 	distloc2=sqrt(((long--78.875880)**2)+((lat-35.74628)**2));
@@ -19,8 +19,17 @@ data zip;
 	else if closest_dist=distloc3 then closest_loc='Location 3';
 	else if closest_dist=distloc4 then closest_loc='Location 4';
 	else closest_loc='Location 5';
+	/*Create distance class*/
+	if closest_dist lt 0.05 then distance_class='Closest';
+	else if 0.05 ge closest_dist lt 0.1 then distance_class='Close';
+	else if 0.1 ge closest_dist lt 0.15 then distance_class='Medium';
+	else if 0.15 ge closest_dist lt 0.2 then distance_class='Far';
+	else distance_class='Farthest';
+	/*Create weight variable for sampling*/
+	weight=1/closest_dist;
 run;
 
+/*DATA EXPLORATION*/
 proc univariate data=zip;
 	var closest_dist;
 	histogram closest_dist / normal(color=red);
@@ -31,3 +40,15 @@ proc means data=zip;
 	var closest_dist;
 run;
 quit;
+
+proc print data=zip (obs=10);
+run;
+
+proc sgplot data=zip;
+  vbar closest_loc / stat=percent dataskin=crisp;
+  xaxis display=(nolabel noticks);
+  yaxis grid;
+  title 'Closest Locations by Percent';
+run;
+/*Should we aim to get representative people by location?*/
+
