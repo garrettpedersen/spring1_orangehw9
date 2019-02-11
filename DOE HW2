@@ -1,0 +1,241 @@
+###########################
+## DOE HW 2 ###############
+###########################
+
+# load libraries
+library('MASS')
+library('visreg')
+library('brglm')
+library('tidyr')
+library('purrr')
+library('ggplot2')
+library('dplyr')
+library('haven')
+library('car')
+library('gridExtra')
+library('RColorBrewer')
+library('rgl')
+library('tidyverse')
+library('ROCR')
+library('DescTools')
+library('Hmisc')
+library('mgcv')
+library('caret')
+library('rpart')
+library('party')
+
+# Load in data
+results <- read_csv('/Users/Garrett/Desktop/MSA Spring/Design of Experiments/orange team 9.csv')
+
+# Change variable type
+results$Location <- as.character(results$Location)
+results$Price <- as.character(results$Price)
+results$Experience <- as.character(results$Experience)
+results$Other <- as.character(results$Other)
+
+typeof(results$Location)
+
+# Create indicator variables for location, price, experience, other categories
+# Make results a data frame 
+df.results <- as.data.frame(results)
+
+# Lat and Long vectors
+lat <- c(35.89314,35.74628,35.7724,35.90535,35.86696)
+long <- c(-78.878130, -78.875880, -78.676540, -79.054280, -78.575981)
+
+# Mutation station
+df.results1 <- df.results %>% 
+  #Location - baseline is Location 5
+  mutate(Location_1 = ifelse((Location=='1'), 1, 0)) %>% 
+  mutate(Location_2 = ifelse((Location=='2'), 1, 0)) %>% 
+  mutate(Location_3 = ifelse((Location=='3'), 1, 0)) %>% 
+  mutate(Location_4 = ifelse((Location=='4'), 1, 0)) %>% 
+  #Price - baseline is $15
+  mutate(Price_20 = ifelse((Price=='2'), 1, 0)) %>% 
+  mutate(Price_25 = ifelse((Price=='3'), 1, 0)) %>% 
+  mutate(Price_30 = ifelse((Price=='4'), 1, 0)) %>% 
+  #Experience - baseline is Family-Friendly
+  mutate(Experience_thrill = ifelse((Experience=='2'), 1, 0)) %>% 
+  #Other - baseline is none
+  mutate(Other_arcade = ifelse((Other=='2'), 1, 0)) %>% 
+  mutate(Other_putt_putt = ifelse((Other=='3'), 1, 0)) %>%
+  mutate(Other_both = ifelse((Other=='4'), 1, 0)) %>%
+  #Distance Metrics by location
+  mutate(Distance_Loc1 = round((sqrt(((df.results$LAT-lat[1])**2)+((df.results$LONG-long[1])**2))), digits=4)) %>%
+  mutate(Distance_Loc2 = round(sqrt(((df.results$LAT-lat[2])**2)+((df.results$LONG-long[2])**2)), digits = 4)) %>%
+  mutate(Distance_Loc3 = round(sqrt(((df.results$LAT-lat[3])**2)+((df.results$LONG-long[3])**2)), digits = 4)) %>%
+  mutate(Distance_Loc4 = round(sqrt(((df.results$LAT-lat[4])**2)+((df.results$LONG-long[4])**2)), digits = 4)) %>%
+  mutate(Distance_Loc5 = round(sqrt(((df.results$LAT-lat[5])**2)+((df.results$LONG-long[5])**2)), digits = 4))   
+
+df.results2 <- df.results1 %>%    
+  mutate(nearest_distance = apply(df.results1[, 25:29], 1, min)) %>% 
+  mutate(nearest_distance_r = round(nearest_distance, digits = 4)) %>% 
+  mutate(closest_location = 
+           ifelse(nearest_distance_r==Distance_Loc1, '1',
+                                   ifelse(nearest_distance_r==Distance_Loc2, '2',
+                                           ifelse(nearest_distance_r==Distance_Loc3, '3',
+                                                   ifelse(nearest_distance_r==Distance_Loc4, '4',
+                                                           '5')
+                                                   )
+                                           )
+                                           )
+                                   
+                                  
+  ) %>%
+  mutate(closest_loc = ifelse((closest_location==Location), 1, 0))
+
+barchart(df.results2$closest_location)
+
+# Explore data
+summary(results)
+
+hist(results$ages)
+barchart(results$sex)
+barchart(results$race)
+barchart(results$income)
+barchart(results$Location)
+barchart(results$Price)
+barchart(results$Experience)
+barchart(results$Other)
+
+table(results$will_attend)
+# 76/1200 will attend ~ 6.3%
+
+
+
+# Need to try a few methods to see which factors are good at predicting attendence 
+
+#######################
+# Logistic Regression #
+#######################
+
+# Split into training and validation 
+set.seed(8675309)
+
+train_split <- createDataPartition(df.results2$will_attend, p=0.70, list=FALSE)
+
+df.train <- df.results2[train_split,]
+df.val <- df.results2[-train_split,]
+
+# Get numbers for events
+table(df.train$will_attend) #55 say they will attend
+table(df.val$will_attend) #21 say they will attend
+
+# Missing values (0)
+sum(is.na(df.train))
+
+# Create initial logistic models 
+
+Model_1 <- glm(will_attend ~ ages + race + sex + income + Location_1 + 
+                 Location_2 + Location_3 + Location_4 + Price_20 +
+                 Price_25 + Price_30 + Experience_thrill + Other_arcade +
+                 Other_putt_putt + Other_both + nearest_distance + 
+                 closest_location + closest_loc, 
+               data=df.train, 
+               family = binomial(link='logit'))
+summary(Model_1)
+# Warning message: glm.fit: fitted probabilities numerically 0 or 1 occurred 
+# This is probably a linear separation problem 
+# Significant variables: ages + Location1 + Location2 + Price30 + Experience_thrill + nearest_location
+# AIC = 280.31
+
+Model_2 <- glm(will_attend ~ ages + Location_1 + Location_2 + Price_30 + 
+                 Experience_thrill + nearest_distance, 
+               data=df.train, 
+               family = binomial(link='logit'))
+summary(Model_2)
+# Significant variables: ages + Location1 + Location2 + Price30 + Experience_thrill 
+# AIC = 337.36
+
+Model_3 <- glm(will_attend ~ ages + Location_1 + Location_2 + Price_30 + 
+                 Experience_thrill, 
+               data=df.train, 
+               family = binomial(link='logit'))
+summary(Model_3)
+# AIC = 335.42
+
+exp(cbind(coef(Model_3),confint(Model_3)))
+
+# Assessments 
+pred <- prediction(fitted(Model_3), factor(Model_3$y))
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+plot(perf, colorize = TRUE)
+abline(a = 0, b = 1, lty = 2)
+auc <- performance(pred, measure = "auc")@y.values
+
+classif_table <- data.frame(threshold = perf@alpha.values[[1]],
+                            tpr = perf@y.values[[1]],
+                            tnr = 1 - perf@x.values[[1]])
+classif_table$youdenJ <- with(classif_table, 2*(0.8*tpr + 0.2*tnr) - 1)
+classif_table[which.max(classif_table$youdenJ),]
+threshold <- classif_table$threshold[which.max(classif_table$youdenJ)]
+# Threshold = 0.023
+
+df.val$pred <- predict(Model_3,newdata=df.val, type='response')
+
+df.val$Predicted_attend <- df.val$pred
+df.val$Predicted_attend[df.val$pred<threshold] <- 0
+df.val$Predicted_attend[df.val$pred>=threshold] <- 1
+
+validation_classification <- table(df.val$Predicted_attend,df.val$will_attend)
+valid_tnr <- validation_classification[1,1]/(validation_classification[1,1]+validation_classification[2,1])
+valid_tpr <- validation_classification[2,2]/(validation_classification[1,2]+validation_classification[2,2])
+valid_tpr
+valid_tnr
+
+
+validation_classification <- table(val_const$Predicted_Win,val_const$Win_Bid)
+valid_tnr <- validation_classification[1,1]/(validation_classification[1,1]+validation_classification[2,1])
+valid_tpr <- validation_classification[2,2]/(validation_classification[1,2]+validation_classification[2,2])
+valid_tpr
+valid_tnr
+
+# Coefficient of Discrimination
+COD <- mean(df.val$pred[df.val$will_attend == 1]) - mean(df.val$pred[df.val$will_attend == 0])
+COD
+
+# ROC Curve
+pred2 <- prediction(df.val$pred, factor(df.val$will_attend))
+perf2 <- performance(pred2, measure = "tpr", x.measure = "fpr")
+plot(perf2, colorize = TRUE)
+abline(a = 0, b = 1, lty = 2)
+auc2 <- performance(pred2, measure = "auc")@y.values
+auc2
+
+
+#################
+# Decision Tree #
+#################
+# Decision tree using rpart
+tree1 <- rpart(will_attend ~ ages + race + sex + income + Location_1 + 
+        Location_2 + Location_3 + Location_4 + Price_20 +
+        Price_25 + Price_30 + Experience_thrill + Other_arcade +
+        Other_putt_putt + Other_both + nearest_distance + 
+        closest_location + closest_loc, 
+      data=df.results2, 
+      method = "class"
+      )
+
+plot(tree1)
+# Well, this doesn't provide much information
+
+# Decision tree using party
+# Change character variables to factors
+summary(df.results2)
+
+df.results2$race <- as.factor(df.results2$race)
+df.results2$sex <- as.factor(df.results2$sex)
+df.results2$income <- as.factor(df.results2$income)
+df.results2$closest_location <- as.factor(df.results2$closest_location)
+
+
+# Run tree
+tree2 <- ctree(will_attend ~ ages + race + sex + income + Location_1 + 
+        Location_2 + Location_3 + Location_4 + Price_20 +
+        Price_25 + Price_30 + Experience_thrill + Other_arcade +
+        Other_putt_putt + Other_both + nearest_distance + 
+        closest_location + closest_loc, data=df.results2)
+
+plot(tree2)
+
+
