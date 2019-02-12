@@ -238,4 +238,61 @@ tree2 <- ctree(will_attend ~ ages + race + sex + income + Location_1 +
 
 plot(tree2)
 
+#########
+# ANOVA #
+#########
+attach(df.results2)
+
+attend_location <- table(will_attend, Location)
+attend_location
+chisq.test(attend_location) # Significant
+
+attend_sex <- table(will_attend, sex)
+attend_sex
+chisq.test(attend_sex) # Not significant 
+
+attend_income <- table(will_attend, income)
+attend_income
+chisq.test(attend_income) # Not significant
+
+attend_price <- table(will_attend, Price)
+attend_price
+chisq.test(attend_price) # Significant 
+# Do ANOVA across prices 
+# Price 1 ($15): 5.4%
+# Price 2 ($20): 5.1%
+# Price 3 ($25): 13.9% - This is the price we should charge 
+# Price 4 ($30): 4.4%
+
+attend_other <- table(will_attend, Other)
+attend_other
+chisq.test(attend_other) # Significant (offer option 3 or 4 (stronger))
+
+attend_experience <- table(will_attend, Experience)
+attend_experience
+chisq.test(attend_experience) # Significant - choose experiece 2 (thrill seeker) 
+
+attend_race <- table(will_attend, race)
+attend_race
+chisq.test(attend_race) # Not significant 
+
+attend_closestlocation <- table(will_attend, closest_location)
+attend_closestlocation
+chisq.test(attend_closestlocation) # Not significant
+
+# Look at relationships between Location, Price, Other, Experience 
+
+# Use $25 price, location 1 or 2, putt-putt and arcade, 
+# and a thrill-seeking experience
+
+# Do ANOVA on all of these 
+anova.test <- aov(will_attend~Location)
+summary(anova.test)
+TukeyHSD(anova.test, which = "Location")
+
+# Look for interactions 
+
+
+
+
 
