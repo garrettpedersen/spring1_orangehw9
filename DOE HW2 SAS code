@@ -1,0 +1,56 @@
+/*DESIGN OF EXPERIMENTS HW 2*/
+/*Orange homework team 9*/
+
+/*Importing data file with additional variables created from R*/
+proc import datafile = '\\vmware-host\Shared Folders\Desktop\MSA Spring\Design of Experiments\updated_experiment_results.csv'
+ out = work.results
+ dbms = CSV
+ ;
+run;
+
+/*Make sure data reads same*/
+proc print data=results (obs=10);
+run;
+
+/*ANOVA testing*/
+/*Location*/
+proc glm data=results;
+	class Location;
+	model will_attend=Location;
+	lsmeans Location / adjust=tukey;
+run;
+quit;
+*Locations 1 and 2 not significantly different;
+
+/*Price*/
+proc glm data=results;
+	class Price;
+	model will_attend=Price;
+	lsmeans Price / adjust=tukey;
+run;
+quit;
+*Prices 1,2,4 not significantly different from one another. 3 is by
+far significantly different;
+
+/*Experience*/
+proc glm data=results;
+	class Experience;
+	model will_attend=Experience;
+	lsmeans Experience / adjust=tukey;
+run;
+quit;
+*Experience 1 and 2 significantly different;
+
+/*Other*/
+proc glm data=results;
+	class Other;
+	model will_attend=Other;
+	lsmeans Other / adjust=tukey;
+run;
+quit;
+* 1 and 2 not different
+1 and 3 different
+2 and 3 not different 
+4 different from everything else;
+
+
