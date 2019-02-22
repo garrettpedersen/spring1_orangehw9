@@ -40,22 +40,22 @@ odds <- seq(1,60, by = 2)
 returns <- df.stocks[,-odds]
 
 ########Collecting Lagrange Multipliers for each Stock##########
-results <- matrix(nrow=ncol(returns),ncol=2)
+results <- rep(0,ncol(returns))
 for (i in 1:ncol(returns)){
   test <- arch.test(arima(returns[,i][-1], order = c(0,0,0)), output = TRUE)
   results[i,] <- test[1,4]
   
 }
-########Ordering each of the stocks by LM ###########
+########Ordering each of the stocks by LM###########
 final_results <- data.frame(ticker,results)
 dec <- order(final_results$results,decreasing = TRUE)
 final_results <- final_results[dec,]
-portfolio <- final_results[1:5,]
+portfol <- final_results[1:5,]
 port.returns <- returns[,c(30,17,24,15,22)]
 company <- port$ticker
 colnames(port.returns) <- company
 #######Trying out all of the models and choosing the one with the lowest AIC#############
-garch <- c("GarchN",'GARCHt','QGarchN','QGarchT')
+garch <- c("GarchN",'tGARCH','QGarchN','QGarchT')
 Final_Fit <- NULL
 AIC_rank <- rep(0,4)
 for (i in 1:5){ 
@@ -96,6 +96,7 @@ NKE.garch <- garchFit(formula= ~ garch(1,1), data=port.returns[,5][-1],
 models <- list(WMT.garch,JNJ.garch,PG.garch,IBM.garch,NKE.garch)
 
 forecasted <- lapply(models, function(x) median(head(predict(x),5)[,3])^2)
+forecasted
 ########Getting the List of Alphas and Betas#############
 alpha <- rep(0,5)
 beta <- rep(0,5)
@@ -107,26 +108,28 @@ for (i in 1:5){
   alphas <- rbind(alphas,alpha)
   betas <- rbind(betas,beta)
 }
-alphas <- cbind(as.factor(company),alphas)
+alphas <- data.frame(company,alphas)
 alphas <- alphas[order(alphas[,2],decreasing = TRUE),]
-betas <- cbind(as.factor(company),betas)
+betas <- data.frame(company,betas)
 betas <- betas[order(betas[,2],decreasing = TRUE),]
-
-#######Optmization##########
+alphas
+betas
+################################Optmization###########################
 #summary of next 5 days of volatility
 #cbind the predicted 5 days volatility for 5 different stock together
-volatility <- cbind(wmt_v5,jnj_v5,pg_v5,ibm_v5,nke_v5)
-port <- volatility
 
 # get the optimized 5 different stocks portion
-library(gurobi)
+install.packages("c:/gurobi810/win64/R/gurobi_8.1-0.zip", repos = NULL)
+install.packages("slam", repos = "https://cloud.r-project.org")
 library(prioritizr)
+library(gurobi)
+
 #
-median.vec=apply(port,2,median)
+median.vec=unlist(forecasted)
 #the cov of the historic return of those 5 different stocks, I use c(59, 43, 52, 41,50) columns in the stocks dataset
-cov.vec = cov(stocks[,c(59, 43, 52, 41,50)])
+cov.vec = cov(port.returns)
 #change the diagonal of the cov matrix to the median forecasted volatility
-diag(cov.vec) = cbind(wmt_for, jnj_for, pg_for, ibm_for, nke_for)
+diag(cov.vec) = median.vec
 
 model <- list()
 
@@ -144,7 +147,8 @@ result$x
 
 
 ################################ Efficient Frontier##############################################
-
+library(quadprog)
+library(ggplot2)
 Dmat=2*cov.vec
 dvec=rep(0,length(median.vec))
 Amat=matrix(c(rep(1,length(median.vec)),median.vec),nrow=2,byrow=T)
@@ -165,7 +169,15 @@ for (i in 1:length(param))
   eff.front.risk[i]=sqrt(ln.model$value)
   eff.front.weight[i,]=ln.model$solution
 }
-plot(eff.front.risk,eff.front.return,type='l',xlab = 'Risk Tolerance', ylab ='Rate of Return (%)',tck = - 0.03, xaxt="n",yaxt = 'n')
+df.eff <- data.frame(eff.front.return,eff.front.risk)
+plot(eff.front.risk,eff.front.return,type='l',xlab = 'Risk Tolerance', ylab ='Rate of Return (%)',main = 'Efficient Frontier',
+     tck = - 0.03, xaxt="n",yaxt = 'n')
 #this two axis statement should be changed accordingly
 axis(1, at = seq(0.008, 0.016, 0.001), las=2,cex=1.2)
 axis(2, at = seq(0.0002, 0.0008, 0.0002), labels=seq(0.02, 0.08, 0.02))
+
+ggplot(data = df.eff,aes(x = eff.front.risk,y=eff.front.return)) + 
+  geom_line() + labs(x = "Risk Tolerance", y = "Percentage of Return (%)") +
+  ggtitle('Efficient Frontier') +
+  theme(plot.title = element_text(hjust = 0.5))
+write.csv(df.eff,file='efficient frontier.csv')
