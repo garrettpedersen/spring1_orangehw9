@@ -1,0 +1,171 @@
+##############################
+#                            #
+#                            #
+#Final Project Part 1#########
+#                            #
+#                            #
+##############################
+library(graphics)
+library(quantmod)
+library(TTR)
+library(ks)
+library(scales)
+library(forecast)
+library(aTSA)
+library(ccgarch)
+library(fGarch)
+library(rugarch)
+
+ticker <- c('MMM','AXP','AAPL','BA','CAT','CVX','CSCO',
+            'KO','DIS','DWDP','XOM','GE','GS','HD',
+            'IBM','INTC','JNJ','JPM','MCD','MRK','MSFT',
+            'NKE','PFE','PG','TRV','UTX','UNH','VZ',
+            'V','WMT')
+getSymbols(ticker)
+
+DJIdx <- list(MMM,AXP,AAPL,BA,CAT,CVX,CSCO,
+              KO,DIS,DWDP,XOM,GE,GS,HD,
+              IBM,INTC,JNJ,JPM,MCD,MRK,MSFT,
+              NKE,PFE,PG,TRV,UTX,UNH,VZ,V,WMT)
+######Grabbing Stock prices and Returns##########
+df.stocks <- NULL
+for (i in 1:length(DJIdx)){
+  stocks <- DJIdx[[i]][,4]
+  stocks <- stocks["2017-02-01/2019-02-08"]
+  returns <- periodReturn(stocks, period = "daily")
+  df.stocks <- cbind(df.stocks,stocks,returns)
+}
+#######Grabbing just returns#################
+odds <- seq(1,60, by = 2)
+returns <- df.stocks[,-odds]
+
+########Collecting Lagrange Multipliers for each Stock##########
+results <- matrix(nrow=ncol(returns),ncol=2)
+for (i in 1:ncol(returns)){
+  test <- arch.test(arima(returns[,i][-1], order = c(0,0,0)), output = TRUE)
+  results[i,] <- test[1,4]
+  
+}
+########Ordering each of the stocks by LM ###########
+final_results <- data.frame(ticker,results)
+dec <- order(final_results$results,decreasing = TRUE)
+final_results <- final_results[dec,]
+portfolio <- final_results[1:5,]
+port.returns <- returns[,c(30,17,24,15,22)]
+company <- port$ticker
+colnames(port.returns) <- company
+#######Trying out all of the models and choosing the one with the lowest AIC#############
+garch <- c("GarchN",'GARCHt','QGarchN','QGarchT')
+Final_Fit <- NULL
+AIC_rank <- rep(0,4)
+for (i in 1:5){ 
+  GARCH.N <- garchFit(formula= ~ garch(1,1), data=port.returns[,i][-1],
+                    cond.dist="norm", include.mean = FALSE)
+
+  GARCH.t <- garchFit(formula= ~ garch(1,1), data=port.returns[,i][-1], 
+                    cond.dist="std", include.mean = FALSE)
+
+  Skew.GARCH.N <- garchFit(formula= ~ garch(1,1), data=port.returns[,i][-1], 
+                         cond.dist="snorm",include.mean = FALSE)
+
+  Skew.GARCH.t <- garchFit(formula= ~ garch(1,1), data=port.returns[,i][-1], 
+                         cond.dist="sstd", include.mean = FALSE)
+  AIC_rank[1] <- GARCH.N@fit$ics[1] 
+  AIC_rank[2] <- GARCH.t@fit$ics[1]
+  AIC_rank[3] <- Skew.GARCH.N@fit$ics[1]
+  AIC_rank[4] <- Skew.GARCH.t@fit$ics[1]
+  Fit <- data.frame(garch,AIC_rank)
+  Fit <- Fit[order(Fit[,2]),]
+  df.Fit <- data.frame(Fit[1,])
+  Final_Fit <- rbind(Final_Fit,df.Fit)
+
+}
+Company_Fit <- cbind(company,Final_Fit)
+#######WMT Forecasted values############
+WMT.garch <- garchFit(formula= ~ garch(1,1), data=port.returns[,1][-1], 
+         cond.dist="sstd", include.mean = FALSE)
+
+JNJ.garch <- garchFit(formula= ~ garch(1,1), data=port.returns[,2][-1], 
+                      cond.dist="sstd", include.mean = FALSE)
+PG.garch <- garchFit(formula= ~ garch(1,1), data=port.returns[,3][-1], 
+                     cond.dist="sstd", include.mean = FALSE)
+IBM.garch <- garchFit(formula= ~ garch(1,1), data=port.returns[,4][-1], 
+                                 cond.dist="std", include.mean = FALSE)
+NKE.garch <- garchFit(formula= ~ garch(1,1), data=port.returns[,5][-1], 
+                                 cond.dist="std", include.mean = FALSE)
+models <- list(WMT.garch,JNJ.garch,PG.garch,IBM.garch,NKE.garch)
+
+forecasted <- lapply(models, function(x) median(head(predict(x),5)[,3])^2)
+########Getting the List of Alphas and Betas#############
+alpha <- rep(0,5)
+beta <- rep(0,5)
+alphas <- NULL
+betas <- NULL
+for (i in 1:5){
+  alpha <- models[[i]]@fit$par[2]
+  beta <- models[[i]]@fit$par[3]
+  alphas <- rbind(alphas,alpha)
+  betas <- rbind(betas,beta)
+}
+alphas <- cbind(as.factor(company),alphas)
+alphas <- alphas[order(alphas[,2],decreasing = TRUE),]
+betas <- cbind(as.factor(company),betas)
+betas <- betas[order(betas[,2],decreasing = TRUE),]
+
+#######Optmization##########
+#summary of next 5 days of volatility
+#cbind the predicted 5 days volatility for 5 different stock together
+volatility <- cbind(wmt_v5,jnj_v5,pg_v5,ibm_v5,nke_v5)
+port <- volatility
+
+# get the optimized 5 different stocks portion
+library(gurobi)
+library(prioritizr)
+#
+median.vec=apply(port,2,median)
+#the cov of the historic return of those 5 different stocks, I use c(59, 43, 52, 41,50) columns in the stocks dataset
+cov.vec = cov(stocks[,c(59, 43, 52, 41,50)])
+#change the diagonal of the cov matrix to the median forecasted volatility
+diag(cov.vec) = cbind(wmt_for, jnj_for, pg_for, ibm_for, nke_for)
+
+model <- list()
+
+model$A     <- matrix(c(1,1,1,1,1,median.vec),nrow=2,byrow=T)
+model$Q     <- cov.vec
+model$obj   <- c(0,0,0,0,0)
+model$rhs   <- c(1,0.0005)
+model$sense <- c('=', '>=')
+result <- gurobi(model,list())
+result.names=c('WMT','JNJ','PG','IBM','NKE')
+names(result$x)=result.names
+result$objval
+result$x
+
+
+
+################################ Efficient Frontier##############################################
+
+Dmat=2*cov.vec
+dvec=rep(0,length(median.vec))
+Amat=matrix(c(rep(1,length(median.vec)),median.vec),nrow=2,byrow=T)
+Amat.2=diag(length(median.vec))
+Amat=t(rbind(Amat,Amat.2))
+
+meq=2
+# these two numbers should be changed based on our value
+param=seq(0.00020,0.00060, by=0.00001)
+eff.front.weight=matrix(nrow=length(param),ncol=length(median.vec))
+eff.front.return=vector(length=length(param))
+eff.front.risk=param
+for (i in 1:length(param))
+{
+  bvec=c(1,param[i],rep(0,length(median.vec)))
+  ln.model=solve.QP(Dmat,dvec,Amat,bvec,meq)
+  eff.front.return[i]=sum(ln.model$solution*median.vec)
+  eff.front.risk[i]=sqrt(ln.model$value)
+  eff.front.weight[i,]=ln.model$solution
+}
+plot(eff.front.risk,eff.front.return,type='l',xlab = 'Risk Tolerance', ylab ='Rate of Return (%)',tck = - 0.03, xaxt="n",yaxt = 'n')
+#this two axis statement should be changed accordingly
+axis(1, at = seq(0.008, 0.016, 0.001), las=2,cex=1.2)
+axis(2, at = seq(0.0002, 0.0008, 0.0002), labels=seq(0.02, 0.08, 0.02))
